@@ -1,6 +1,3 @@
--- SPADE DUELS  â€“  Full Script
--- Place as a LocalScript inside StarterPlayerScripts
-
 local Lib = Instance.new("ScreenGui")
 local UIS = game:GetService("UserInputService")
 local Players = game:GetService("Players")
