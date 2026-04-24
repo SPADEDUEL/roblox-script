@@ -2999,9 +2999,3 @@ end
 
 LocalPlayer.CharacterAdded:Connect(setupChar)
 if LocalPlayer.Character then setupChar(LocalPlayer.Character) end
-
-print("K7 HUB v4 - Loaded!")
-print("âœ“ Mobile: 2 horizontal rows of rectangle buttons + LOCK button")
-print("âœ“ Inf jump fixed for mobile (re-jumps on land)")
-print("âœ“ A.LEFT/A.RIGHT auto-reset button when movement completes")
-print("âœ“ Drag uses btn.InputChanged - joystick no longer moves buttons")
