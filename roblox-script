@@ -45,17 +45,32 @@ local autoRightConnection = nil
 local autoLeftPhase = 1
 local autoRightPhase = 1
 
--- Positions
-local POSITION_L1 = Vector3.new(-476.00, -6.28, 93.00)
-local POSITION_L2 = Vector3.new(-485.00, -4.95, 94.00)
-local POSITION_L3 = Vector3.new(-475.00, -6.99, 93.29)
-local POSITION_L4 = Vector3.new(-475.00, -6.99, 26.00)
-local POSITION_L5 = Vector3.new(-485.00- -6.99, 26.00)
-local POSITION_R1 = Vector3.new(-475.00, -6.99, 26.00)
-local POSITION_R2 = Vector3.new(-485.00, -5.09, 25.00)
-local POSITION_R3 = Vector3.new(-475.00, -6.99, 26.00)
-local POSITION_R4 = Vector3.new(-475.00, -6.99, 95.00)
-local POSITION_R5 = Vector3.new(-485.00, -6.99, 95.00)
+-- Customizable Waypoints (5 per side â€” edit X/Y/Z freely)
+local leftWaypoints = {
+    Vector3.new(-476.00, -6.28,  93.00),  -- L1
+    Vector3.new(-485.00, -4.95,  94.00),  -- L2
+    Vector3.new(-475.00, -6.99,  93.29),  -- L3
+    Vector3.new(-475.00, -6.99,  26.00),  -- L4
+    Vector3.new(-485.00, -6.99,  26.00),  -- L5
+}
+local rightWaypoints = {
+    Vector3.new(-475.00, -6.99,  26.00),  -- R1
+    Vector3.new(-485.00, -5.09,  25.00),  -- R2
+    Vector3.new(-475.00, -6.99,  26.00),  -- R3
+    Vector3.new(-475.00, -6.99,  95.00),  -- R4
+    Vector3.new(-485.00, -6.99,  95.00),  -- R5
+}
+-- Legacy aliases used by auto-movement functions
+local POSITION_L1 = leftWaypoints[1]
+local POSITION_L2 = leftWaypoints[2]
+local POSITION_L3 = leftWaypoints[3]
+local POSITION_L4 = leftWaypoints[4]
+local POSITION_L5 = leftWaypoints[5]
+local POSITION_R1 = rightWaypoints[1]
+local POSITION_R2 = rightWaypoints[2]
+local POSITION_R3 = rightWaypoints[3]
+local POSITION_R4 = rightWaypoints[4]
+local POSITION_R5 = rightWaypoints[5]
 
 -- Steal System (Lust insta-grab logic)
 local isStealing = false
@@ -131,14 +146,14 @@ local setAutoRight = nil  -- assigned when makeRow runs for Auto Right
 local ProgressLabel, ProgressPercentLabel, ProgressBarFill, RadiusInput, DurationInput
 local saveConfigBtn
 
--- Colors
-local C_BG = Color3.fromRGB(0, 0, 0)
-local C_PURPLE = Color3.fromRGB(178, 0, 255)
-local C_PURPLE2 = Color3.fromRGB(215, 90, 255)
-local C_DIM = Color3.fromRGB(100, 0, 145)
-local C_SW_OFF = Color3.fromRGB(28, 28, 28)
-local C_WHITE = Color3.fromRGB(255, 255, 255)
-local C_ROW_BG = Color3.fromRGB(10, 0, 16)
+-- Colors (Red & White theme)
+local C_BG     = Color3.fromRGB(255, 255, 255)  -- white background
+local C_PURPLE = Color3.fromRGB(210,  20,  20)  -- main red (kept as C_PURPLE for compat)
+local C_PURPLE2= Color3.fromRGB(240,  60,  60)  -- lighter red hover
+local C_DIM    = Color3.fromRGB(150,   0,   0)  -- dark red accent
+local C_SW_OFF = Color3.fromRGB(210, 210, 210)  -- grey switch off
+local C_WHITE  = Color3.fromRGB(255, 255, 255)  -- white
+local C_ROW_BG = Color3.fromRGB(255, 245, 245)  -- light red-tinted rows
 
 -- Utility Functions
 local function getHRP()
@@ -329,8 +344,8 @@ local function startAntiRagdoll()
                     if pm then require(pm:FindFirstChild("ControlModule")):Enable() end
                 end)
                 if root then
-                    root.Velocity = Vector3.new(0, 0, 0)
-                    root.RotVelocity = Vector3.new(0, 0, 0)
+                    root.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    root.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
                 end
             end
         end
@@ -375,8 +390,8 @@ RunService.Heartbeat:Connect(function()
     local c = LocalPlayer.Character
     if not c then return end
     local rp = c:FindFirstChild("HumanoidRootPart")
-    if rp and rp.Velocity.Y < -INF_CLAMP_FALL then
-        rp.Velocity = Vector3.new(rp.Velocity.X, -INF_CLAMP_FALL, rp.Velocity.Z)
+    if rp and rp.AssemblyLinearVelocity.Y < -INF_CLAMP_FALL then
+        rp.AssemblyLinearVelocity = Vector3.new(rp.AssemblyLinearVelocity.X, -INF_CLAMP_FALL, rp.AssemblyLinearVelocity.Z)
     end
 end)
 
@@ -386,7 +401,7 @@ UserInputService.JumpRequest:Connect(function()
     if not c then return end
     local rp = c:FindFirstChild("HumanoidRootPart")
     if rp then
-        rp.Velocity = Vector3.new(rp.Velocity.X, INF_JUMP_FORCE, rp.Velocity.Z)
+        rp.AssemblyLinearVelocity = Vector3.new(rp.AssemblyLinearVelocity.X, INF_JUMP_FORCE, rp.AssemblyLinearVelocity.Z)
     end
 end)
 
@@ -731,7 +746,10 @@ local function faceNorth()
     end
 end
 
--- Auto Movement
+-- Auto Movement (5-waypoint looping patrol)
+local autoLeftPhaseMax = #leftWaypoints
+local autoRightPhaseMax = #rightWaypoints
+
 local function startAutoLeft()
     if autoLeftConnection then autoLeftConnection:Disconnect() end
     autoLeftPhase = 1
@@ -742,43 +760,14 @@ local function startAutoLeft()
         local rp = c:FindFirstChild("HumanoidRootPart")
         local hum = c:FindFirstChildOfClass("Humanoid")
         if not rp or not hum then return end
-        
         local spd = NORMAL_SPEED
-        if autoLeftPhase == 1 then
-            local tgt = Vector3.new(POSITION_L1.X, rp.Position.Y, POSITION_L1.Z)
-            if (tgt - rp.Position).Magnitude < 1 then
-                autoLeftPhase = 2
-                local d = (POSITION_L2 - rp.Position)
-                local mv = Vector3.new(d.X, 0, d.Z).Unit
-                hum:Move(mv, false)
-                rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
-                return
-            end
-            local d = (POSITION_L1 - rp.Position)
-            local mv = Vector3.new(d.X, 0, d.Z).Unit
-            hum:Move(mv, false)
-            rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
-        elseif autoLeftPhase == 2 then
-            local tgt = Vector3.new(POSITION_L2.X, rp.Position.Y, POSITION_L2.Z)
-            if (tgt - rp.Position).Magnitude < 1 then
-                hum:Move(Vector3.zero, false)
-                rp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                AutoLeftEnabled = false
-                Enabled.AutoLeftEnabled = false
-                if autoLeftConnection then
-                    autoLeftConnection:Disconnect()
-                    autoLeftConnection = nil
-                end
-                autoLeftPhase = 1
-                if _G_AL_swBg and _G_AL_swCircle then
-                    _G_AL_swBg.BackgroundColor3 = C_SW_OFF
-                    _G_AL_swCircle.Position = UDim2.new(0, 3, 0.5, -8)
-                end
-                if MobileButtons["A.LEFT"] then MobileButtons["A.LEFT"].setState(false) end
-                faceSouth()
-                return
-            end
-            local d = (POSITION_L2 - rp.Position)
+        local target = leftWaypoints[autoLeftPhase]
+        local tgt = Vector3.new(target.X, rp.Position.Y, target.Z)
+        if (tgt - rp.Position).Magnitude < 2 then
+            autoLeftPhase = autoLeftPhase >= autoLeftPhaseMax and 1 or autoLeftPhase + 1
+        end
+        local d = (tgt - rp.Position)
+        if d.Magnitude > 0.1 then
             local mv = Vector3.new(d.X, 0, d.Z).Unit
             hum:Move(mv, false)
             rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
@@ -809,43 +798,14 @@ local function startAutoRight()
         local rp = c:FindFirstChild("HumanoidRootPart")
         local hum = c:FindFirstChildOfClass("Humanoid")
         if not rp or not hum then return end
-        
         local spd = NORMAL_SPEED
-        if autoRightPhase == 1 then
-            local tgt = Vector3.new(POSITION_R1.X, rp.Position.Y, POSITION_R1.Z)
-            if (tgt - rp.Position).Magnitude < 1 then
-                autoRightPhase = 2
-                local d = (POSITION_R2 - rp.Position)
-                local mv = Vector3.new(d.X, 0, d.Z).Unit
-                hum:Move(mv, false)
-                rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
-                return
-            end
-            local d = (POSITION_R1 - rp.Position)
-            local mv = Vector3.new(d.X, 0, d.Z).Unit
-            hum:Move(mv, false)
-            rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
-        elseif autoRightPhase == 2 then
-            local tgt = Vector3.new(POSITION_R2.X, rp.Position.Y, POSITION_R2.Z)
-            if (tgt - rp.Position).Magnitude < 1 then
-                hum:Move(Vector3.zero, false)
-                rp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
-                AutoRightEnabled = false
-                Enabled.AutoRightEnabled = false
-                if autoRightConnection then
-                    autoRightConnection:Disconnect()
-                    autoRightConnection = nil
-                end
-                autoRightPhase = 1
-                if _G_AR_swBg and _G_AR_swCircle then
-                    _G_AR_swBg.BackgroundColor3 = C_SW_OFF
-                    _G_AR_swCircle.Position = UDim2.new(0, 3, 0.5, -8)
-                end
-                if MobileButtons["A.RIGHT"] then MobileButtons["A.RIGHT"].setState(false) end
-                faceNorth()
-                return
-            end
-            local d = (POSITION_R2 - rp.Position)
+        local target = rightWaypoints[autoRightPhase]
+        local tgt = Vector3.new(target.X, rp.Position.Y, target.Z)
+        if (tgt - rp.Position).Magnitude < 2 then
+            autoRightPhase = autoRightPhase >= autoRightPhaseMax and 1 or autoRightPhase + 1
+        end
+        local d = (tgt - rp.Position)
+        if d.Magnitude > 0.1 then
             local mv = Vector3.new(d.X, 0, d.Z).Unit
             hum:Move(mv, false)
             rp.AssemblyLinearVelocity = Vector3.new(mv.X * spd, rp.AssemblyLinearVelocity.Y, mv.Z * spd)
@@ -924,7 +884,7 @@ local function flyToFrontOfTarget(targetHRP)
     local forward = targetHRP.CFrame.LookVector
     local frontPos = targetHRP.Position + forward * 1.5
     local direction = (frontPos - hrp.Position).Unit
-    hrp.Velocity = Vector3.new(direction.X * 56.5, direction.Y * 56.5, direction.Z * 56.5)
+    hrp.AssemblyLinearVelocity = Vector3.new(direction.X * 56.5, direction.Y * 56.5, direction.Z * 56.5)
 end
 
 -- Settings Functions
@@ -1150,7 +1110,7 @@ if true then -- mobile buttons (always enabled)
 
         btn.InputChanged:Connect(function(inp)
             if not dragging then return end
-            if buttonsLocked then return end
+            if buttonsLocked and name ~= "LOCK" then return end  -- LOCK can always move itself
             if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseMovement then
                 local delta = Vector2.new(inp.Position.X, inp.Position.Y) - dragStart
                 if delta.Magnitude > DRAG_THRESHOLD then
@@ -1284,6 +1244,80 @@ if true then -- mobile buttons (always enabled)
     print("âœ“ MOBILE BUTTONS: 2 horizontal rows, rectangles, lock button, fixed dragging")
 end
 
+-- ============================
+-- FLOATING TP DOWN GUI
+-- ============================
+do
+    local tpGui = Instance.new("ScreenGui")
+    tpGui.Name = "TpDownFloatGui"
+    tpGui.ResetOnSpawn = false
+    tpGui.DisplayOrder = 10000
+    tpGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+    local tpBtn = Instance.new("TextButton")
+    tpBtn.Name = "TpDownBtn"
+    tpBtn.Size = UDim2.new(0, 110, 0, 50)
+    tpBtn.Position = UDim2.new(0.5, -55, 0, 80)
+    tpBtn.BackgroundColor3 = Color3.fromRGB(210, 20, 20)
+    tpBtn.BorderSizePixel = 0
+    tpBtn.Text = "â¬‡ TP DOWN"
+    tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    tpBtn.Font = Enum.Font.GothamBlack
+    tpBtn.TextSize = 13
+    tpBtn.AutoButtonColor = false
+    tpBtn.ZIndex = 10002
+    tpBtn.Parent = tpGui
+    Instance.new("UICorner", tpBtn).CornerRadius = UDim.new(0, 14)
+    local tpStroke = Instance.new("UIStroke", tpBtn)
+    tpStroke.Color = Color3.fromRGB(255, 255, 255)
+    tpStroke.Thickness = 2
+
+    local function doTpDown()
+        local char = LocalPlayer.Character
+        if not char then return end
+        local rp = char:FindFirstChild("HumanoidRootPart")
+        if not rp then return end
+        local params = RaycastParams.new()
+        params.FilterDescendantsInstances = {char}
+        params.FilterType = Enum.RaycastFilterType.Exclude
+        local res = workspace:Raycast(rp.Position, Vector3.new(0, -5000, 0), params)
+        if res and rp.Position.Y - res.Position.Y >= 3 then
+            rp.CFrame = CFrame.new(rp.Position.X, res.Position.Y + 3, rp.Position.Z) * (rp.CFrame - rp.CFrame.Position)
+            rp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        end
+        tpBtn.BackgroundColor3 = Color3.fromRGB(255, 80, 80)
+        task.delay(0.25, function() tpBtn.BackgroundColor3 = Color3.fromRGB(210, 20, 20) end)
+    end
+
+    local tpDragging, tpMoved = false, false
+    local tpDragStart, tpStartPos = Vector2.zero, Vector2.zero
+
+    tpBtn.InputBegan:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            tpDragging = true; tpMoved = false
+            tpDragStart = Vector2.new(inp.Position.X, inp.Position.Y)
+            tpStartPos = Vector2.new(tpBtn.AbsolutePosition.X, tpBtn.AbsolutePosition.Y)
+        end
+    end)
+    tpBtn.InputChanged:Connect(function(inp)
+        if not tpDragging then return end
+        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseMovement then
+            local delta = Vector2.new(inp.Position.X, inp.Position.Y) - tpDragStart
+            if delta.Magnitude > 10 then
+                tpMoved = true
+                tpBtn.Position = UDim2.new(0, tpStartPos.X + delta.X, 0, tpStartPos.Y + delta.Y)
+            end
+        end
+    end)
+    tpBtn.InputEnded:Connect(function(inp)
+        if inp.UserInputType == Enum.UserInputType.Touch or inp.UserInputType == Enum.UserInputType.MouseButton1 then
+            if tpDragging and not tpMoved then doTpDown() end
+            tpDragging = false
+        end
+    end)
+    tpBtn.MouseButton1Click:Connect(doTpDown)
+end
+
 
 -- Rest of GUI continues...
 main = Instance.new("Frame")
@@ -1306,7 +1340,7 @@ end
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 24)
 
 local mainStroke = Instance.new("UIStroke", main)
-mainStroke.Color = Color3.fromRGB(60, 0, 90)
+mainStroke.Color = Color3.fromRGB(210, 20, 20)
 mainStroke.Thickness = 1.5
 
 -- Dragging (Mouse + Touch)
@@ -1398,7 +1432,7 @@ end)
 local sep = Instance.new("Frame")
 sep.Size = UDim2.new(1, -40, 0, 1)
 sep.Position = UDim2.new(0, 20, 0, 68)
-sep.BackgroundColor3 = Color3.fromRGB(30, 0, 45)
+sep.BackgroundColor3 = Color3.fromRGB(220, 180, 180)
 sep.BorderSizePixel = 0
 sep.ZIndex = 3
 sep.Parent = main
@@ -1908,7 +1942,7 @@ local function makeManualRow(keybindRefName, labelTxt, order)
         if inp.UserInputType == Enum.UserInputType.Touch then
             playTick()
             TweenService:Create(nameLbl, TweenInfo.new(0.1), {TextColor3 = C_PURPLE2}):Play()
-            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(18, 0, 26)}):Play()
+            TweenService:Create(row, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(255, 225, 225)}):Play()
         end
     end)
     
@@ -1933,7 +1967,7 @@ local function makeSectionLbl(txt, order)
     l.Size = UDim2.new(1, 0, 1, 0)
     l.BackgroundTransparency = 1
     l.Text = txt:upper()
-    l.TextColor3 = Color3.fromRGB(55, 0, 80)
+    l.TextColor3 = Color3.fromRGB(180, 0, 0)
     l.Font = Enum.Font.GothamBold
     l.TextSize = 10
     l.TextXAlignment = Enum.TextXAlignment.Left
@@ -1991,6 +2025,119 @@ setAutoRight = function(on)
     Enabled.AutoRightEnabled = on
     if _arVisual then _arVisual(on) end
     if on then startAutoRight() else stopAutoRight() end
+end
+
+-- ============================
+-- WAYPOINT EDITOR UI
+-- ============================
+do
+    makeSectionLbl("Waypoints", O())
+
+    local function makeWaypointRow(parent, label, wpTable, idx)
+        local frame = Instance.new("Frame")
+        frame.Size = UDim2.new(1, 0, 0, 44)
+        frame.BackgroundColor3 = C_ROW_BG
+        frame.BorderSizePixel = 0
+        frame.LayoutOrder = O()
+        frame.ZIndex = 3
+        frame.Parent = parent
+        Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
+
+        local lbl = Instance.new("TextLabel")
+        lbl.Size = UDim2.new(0, 60, 1, 0)
+        lbl.Position = UDim2.new(0, 8, 0, 0)
+        lbl.BackgroundTransparency = 1
+        lbl.Text = label
+        lbl.TextColor3 = C_PURPLE
+        lbl.Font = Enum.Font.GothamBold
+        lbl.TextSize = 11
+        lbl.TextXAlignment = Enum.TextXAlignment.Left
+        lbl.ZIndex = 4
+        lbl.Parent = frame
+
+        local coords = {"X","Y","Z"}
+        local initVec = wpTable[idx]
+        local vals = {initVec.X, initVec.Y, initVec.Z}
+
+        for ci, axis in ipairs(coords) do
+            local axLbl = Instance.new("TextLabel")
+            axLbl.Size = UDim2.new(0, 12, 0, 16)
+            axLbl.Position = UDim2.new(0, 62 + (ci-1)*96, 0.5, -8)
+            axLbl.BackgroundTransparency = 1
+            axLbl.Text = axis
+            axLbl.TextColor3 = C_DIM
+            axLbl.Font = Enum.Font.GothamBold
+            axLbl.TextSize = 10
+            axLbl.ZIndex = 5
+            axLbl.Parent = frame
+
+            local box = Instance.new("TextBox")
+            box.Size = UDim2.new(0, 72, 0, 26)
+            box.Position = UDim2.new(0, 76 + (ci-1)*96, 0.5, -13)
+            box.BackgroundColor3 = Color3.fromRGB(255, 235, 235)
+            box.BorderSizePixel = 0
+            box.Text = string.format("%.2f", vals[ci])
+            box.TextColor3 = C_PURPLE
+            box.Font = Enum.Font.Gotham
+            box.TextSize = 11
+            box.ClearTextOnFocus = false
+            box.ZIndex = 5
+            box.Parent = frame
+            Instance.new("UICorner", box).CornerRadius = UDim.new(0, 6)
+            local bs = Instance.new("UIStroke", box)
+            bs.Color = C_DIM; bs.Thickness = 1
+
+            box.Focused:Connect(function()
+                TweenService:Create(bs, TweenInfo.new(0.15), {Color = C_PURPLE}):Play()
+            end)
+            box.FocusLost:Connect(function()
+                TweenService:Create(bs, TweenInfo.new(0.15), {Color = C_DIM}):Play()
+                local n = tonumber(box.Text)
+                if n then
+                    vals[ci] = n
+                    box.Text = string.format("%.2f", n)
+                    wpTable[idx] = Vector3.new(vals[1], vals[2], vals[3])
+                else
+                    box.Text = string.format("%.2f", vals[ci])
+                end
+            end)
+        end
+
+        local gap = Instance.new("Frame")
+        gap.Size = UDim2.new(1, 0, 0, 4)
+        gap.BackgroundTransparency = 1
+        gap.BorderSizePixel = 0
+        gap.LayoutOrder = O()
+        gap.Parent = parent
+    end
+
+    local lhdr = Instance.new("TextLabel")
+    lhdr.Size = UDim2.new(1, 0, 0, 20)
+    lhdr.BackgroundTransparency = 1
+    lhdr.Text = "â—€  LEFT PATH"
+    lhdr.TextColor3 = Color3.fromRGB(180, 0, 0)
+    lhdr.Font = Enum.Font.GothamBold
+    lhdr.TextSize = 11
+    lhdr.TextXAlignment = Enum.TextXAlignment.Left
+    lhdr.LayoutOrder = O()
+    lhdr.ZIndex = 4
+    lhdr.Parent = vstack
+
+    for i = 1, 5 do makeWaypointRow(vstack, "L"..i, leftWaypoints, i) end
+
+    local rhdr = Instance.new("TextLabel")
+    rhdr.Size = UDim2.new(1, 0, 0, 20)
+    rhdr.BackgroundTransparency = 1
+    rhdr.Text = "â–¶  RIGHT PATH"
+    rhdr.TextColor3 = Color3.fromRGB(180, 0, 0)
+    rhdr.Font = Enum.Font.GothamBold
+    rhdr.TextSize = 11
+    rhdr.TextXAlignment = Enum.TextXAlignment.Left
+    rhdr.LayoutOrder = O()
+    rhdr.ZIndex = 4
+    rhdr.Parent = vstack
+
+    for i = 1, 5 do makeWaypointRow(vstack, "R"..i, rightWaypoints, i) end
 end
 
 -- Speed Toggle
@@ -2744,11 +2891,11 @@ RunService.RenderStepped:Connect(function()
         local md = h.MoveDirection
         local spd = speedToggled and CARRY_SPEED or NORMAL_SPEED
         if md.Magnitude > 0 then
-            hrp.Velocity = Vector3.new(md.X * spd, hrp.Velocity.Y, md.Z * spd)
+            hrp.AssemblyLinearVelocity = Vector3.new(md.X * spd, hrp.AssemblyLinearVelocity.Y, md.Z * spd)
         end
     end
     if speedLbl then
-        speedLbl.Text = "Speed: " .. string.format("%.1f", Vector3.new(hrp.Velocity.X, 0, hrp.Velocity.Z).Magnitude)
+        speedLbl.Text = "Speed: " .. string.format("%.1f", Vector3.new(hrp.AssemblyLinearVelocity.X, 0, hrp.AssemblyLinearVelocity.Z).Magnitude)
     end
 end)
 
